@@ -6,12 +6,12 @@ import com.orchid.wagelivetracker.data.local.entity.ShiftEntity
 import java.time.LocalDateTime
 
 /** All application writes go through this boundary. DAOs are persistence implementation details. */
-class WorkRepository(private val database: WageDatabase) {
+class WorkRepository(private val database: WageDatabase) : WorkProfileStore {
     private val profiles = database.workProfileDao()
     private val shifts = database.shiftDao()
     private val rests = database.breakDao()
 
-    suspend fun saveProfile(profile: WorkProfile, makeCurrent: Boolean = true): WorkProfile = database.withTransaction {
+    override suspend fun saveProfile(profile: WorkProfile, makeCurrent: Boolean): WorkProfile = database.withTransaction {
         val previous = if (profile.id == 0L) null else checkNotNull(profiles.getById(profile.id)) { "Profile not found" }
         require(previous == null || previous.createdAt == profile.createdAt) { "Creation time cannot change" }
         require(previous == null || profile.updatedAt >= previous.updatedAt) { "Update time cannot go backwards" }
@@ -24,7 +24,7 @@ class WorkRepository(private val database: WageDatabase) {
     }
 
     suspend fun getProfile(id: Long): WorkProfile? = profiles.getById(id)?.toModel()
-    suspend fun getCurrentProfile(): WorkProfile? {
+    override suspend fun getCurrentProfile(): WorkProfile? {
         val current = profiles.getCurrent()
         check(current.size <= 1) { "Multiple current profiles found" }
         return current.singleOrNull()?.toModel()

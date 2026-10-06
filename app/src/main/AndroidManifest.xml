@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".WageApplication"
         android:allowBackup="true"
@@ -12,6 +16,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.WageLiveTracker">
+        <service android:name=".notification.ShiftForegroundService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-initiated active work shift: show ongoing elapsed time and estimated wages with pause, resume and finish controls until the user ends the shift. Room remains the source of truth; no location tracking or data synchronization." />
+        </service>
         <activity
             android:name=".MainActivity"
             android:exported="true"

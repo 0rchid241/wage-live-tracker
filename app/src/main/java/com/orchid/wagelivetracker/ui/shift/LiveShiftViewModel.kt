@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.orchid.wagelivetracker.data.repository.LiveShiftStore
 import com.orchid.wagelivetracker.data.repository.StoredShift
 import com.orchid.wagelivetracker.data.repository.WorkProfile
+import com.orchid.wagelivetracker.data.repository.ShiftSessionStore
+import com.orchid.wagelivetracker.data.repository.ShiftStatus
 import java.time.Clock
 import java.time.LocalDateTime
 import kotlinx.coroutines.CancellationException
@@ -13,6 +15,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 enum class ShiftOperation { STARTING_BREAK, ENDING_BREAK, COMPLETING }
@@ -42,7 +45,37 @@ class LiveShiftViewModel(
     val state = mutableState.asStateFlow()
     private var ticker: Job? = null
 
-    init { reload() }
+    init {
+        reload()
+        (repository as? ShiftSessionStore)?.let { sessions ->
+            viewModelScope.launch {
+                sessions.observeInProgressShift().catch {
+                    (state.value as? LiveShiftState.Active)?.let { current ->
+                        mutableState.value = current.copy(error = "변경된 기록을 불러오지 못했어요. 다시 불러와 주세요.")
+                    }
+                }.collect { stored ->
+                    try {
+                        val current = state.value
+                        // Our own saves publish their result; observation synchronizes external notification actions.
+                        if (current is LiveShiftState.Active && current.operation == null) {
+                            if (stored != null && stored != current.stored) mutableState.value = active(stored)
+                            else if (stored == null) {
+                                val saved = sessions.getShift(current.stored.shift.id)
+                                if (saved?.shift?.status == ShiftStatus.COMPLETED) {
+                                    mutableState.value = LiveShiftState.Summary(saved, projection.calculate(saved, checkNotNull(saved.shift.endedAt)))
+                                } else reload()
+                            }
+                        } else if (current is LiveShiftState.Idle && !current.isStarting && stored != null) mutableState.value = active(stored)
+                    } catch (error: CancellationException) { throw error
+                    } catch (_: Exception) {
+                        (state.value as? LiveShiftState.Active)?.let { current ->
+                            mutableState.value = current.copy(error = "변경된 기록을 불러오지 못했어요. 다시 불러와 주세요.")
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     fun reload() {
         if ((state.value as? LiveShiftState.Active)?.operation != null || (state.value as? LiveShiftState.Idle)?.isStarting == true) return
@@ -95,7 +128,19 @@ class LiveShiftViewModel(
                 } else active(stored)
             } catch (error: CancellationException) { throw error
             } catch (_: Exception) {
-                mutableState.value = current.copy(error = "변경을 저장하지 못했어요. 시각을 확인하고 다시 시도해 주세요.")
+                val message = "변경을 저장하지 못했어요. 시각을 확인하고 다시 시도해 주세요."
+                // A notification action may have committed while this screen's operation failed.
+                // Recover that Room result rather than restoring an outdated pre-operation copy.
+                val sessions = repository as? ShiftSessionStore
+                mutableState.value = try {
+                    val latest = sessions?.getShift(current.stored.shift.id)
+                    when {
+                        latest?.shift?.status == ShiftStatus.COMPLETED -> LiveShiftState.Summary(latest, projection.calculate(latest, checkNotNull(latest.shift.endedAt)))
+                        latest != null -> active(latest).copy(error = message)
+                        else -> current.copy(error = message)
+                    }
+                } catch (error: CancellationException) { throw error
+                } catch (_: Exception) { current.copy(error = message) }
             }
         }
     }

@@ -5,9 +5,10 @@ import com.orchid.wagelivetracker.data.local.database.WageDatabase
 import com.orchid.wagelivetracker.data.local.entity.ShiftEntity
 import java.time.LocalDateTime
 import java.time.YearMonth
+import kotlinx.coroutines.flow.map
 
 /** All application writes go through this boundary. DAOs are persistence implementation details. */
-class WorkRepository(private val database: WageDatabase) : WorkProfileStore, LiveShiftStore, WorkHistoryStore {
+class WorkRepository(private val database: WageDatabase) : WorkProfileStore, ShiftSessionStore, WorkHistoryStore {
     private val profiles = database.workProfileDao()
     private val shifts = database.shiftDao()
     private val rests = database.breakDao()
@@ -24,7 +25,7 @@ class WorkRepository(private val database: WageDatabase) : WorkProfileStore, Liv
         }
     }
 
-    suspend fun getProfile(id: Long): WorkProfile? = profiles.getById(id)?.toModel()
+    override suspend fun getProfile(id: Long): WorkProfile? = profiles.getById(id)?.toModel()
     override suspend fun getCurrentProfile(): WorkProfile? {
         val current = profiles.getCurrent()
         check(current.size <= 1) { "Multiple current profiles found" }
@@ -48,7 +49,23 @@ class WorkRepository(private val database: WageDatabase) : WorkProfileStore, Liv
         active.singleOrNull()?.let { checkNotNull(shifts.getWithBreaks(it.id)).toModel() }
     }
 
-    suspend fun getShift(id: Long): StoredShift? = shifts.getWithBreaks(id)?.toModel()
+    override suspend fun getShift(id: Long): StoredShift? = shifts.getWithBreaks(id)?.toModel()
+
+    override fun observeInProgressShift() = shifts.observeInProgressWithBreaks().map { records ->
+        check(records.size <= 1) { "Multiple in-progress shifts found" }
+        records.singleOrNull()?.toModel()
+    }
+
+    override suspend fun applyNotificationAction(id: Long, revision: String, action: ShiftNotificationAction, at: LocalDateTime): StoredShift? = database.withTransaction {
+        val stored = getInProgressShift() ?: return@withTransaction null
+        if (!stored.acceptsNotificationAction(id, revision, action)) return@withTransaction null
+        // Validation and the existing atomic mutation share this transaction, preventing UI/action races.
+        when (action) {
+            ShiftNotificationAction.BREAK -> startBreak(id, at)
+            ShiftNotificationAction.RESUME -> endBreak(id, at)
+            ShiftNotificationAction.FINISH -> finishShift(id, at)
+        }
+    }
 
     suspend fun getOpenBreak(shiftId: Long): BreakRecord? = database.withTransaction {
         val open = rests.getForShift(shiftId).filter { it.endedAt == null }

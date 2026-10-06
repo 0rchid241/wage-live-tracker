@@ -27,6 +27,8 @@ fun LiveShiftScreen(
     onRetry: () -> Unit,
     onEdit: () -> Unit,
     onHistory: () -> Unit = {},
+    notificationMessage: String? = null,
+    onEnableNotifications: () -> Unit = {},
 ) {
     BackHandler(enabled = state is LiveShiftState.Summary) { onConfirm() }
     Scaffold { padding ->
@@ -80,6 +82,10 @@ fun LiveShiftScreen(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("toggleBreak"),
                     ) { Text(if (state.onBreak) "휴게 종료" else "휴게 시작") }
                     OutlinedButton(onClick = onFinish, enabled = state.operation == null, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("finishShift")) { Text("퇴근") }
+                    notificationMessage?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("notificationHint"))
+                        TextButton(onClick = onEnableNotifications, modifier = Modifier.testTag("enableNotifications")) { Text("근무 알림 켜기") }
+                    }
                 }
                 is LiveShiftState.Summary -> {
                     Text("오늘도 수고했어요.", style = MaterialTheme.typography.headlineMedium)

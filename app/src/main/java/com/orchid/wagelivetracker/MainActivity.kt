@@ -22,6 +22,7 @@ import com.orchid.wagelivetracker.ui.history.WorkHistoryViewModel
 import com.orchid.wagelivetracker.ui.history.WorkHistoryState
 import com.orchid.wagelivetracker.ui.history.WorkHistoryScreen
 import com.orchid.wagelivetracker.ui.history.HistoryActions
+import com.orchid.wagelivetracker.notification.rememberShiftNotificationControl
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,6 +49,7 @@ class MainActivity : ComponentActivity() {
                 if (state is WorkProfileSetupState.Ready && liveState is LiveShiftState.SetupRequired) live.reload()
             }
             WageLiveTrackerTheme {
+                val notification = rememberShiftNotificationControl(liveState)
                 if (historyState != WorkHistoryState.Closed && liveState is LiveShiftState.Idle) WorkHistoryScreen(historyState, HistoryActions(history))
                 else if (liveState is LiveShiftState.SetupRequired) WorkProfileSetupScreen(
                     state = state,
@@ -65,6 +67,7 @@ class MainActivity : ComponentActivity() {
                     onConfirm = live::dismissSummary, onRetry = live::reload,
                     onEdit = { viewModel.editProfile(); live.openSetup() },
                     onHistory = { if ((live.state.value as? LiveShiftState.Idle)?.isStarting == false) history.open() },
+                    notificationMessage = notification.message, onEnableNotifications = notification.enable,
                 )
             }
         }

@@ -69,6 +69,11 @@ Issue #5에서 월간 목록·유급/휴게시간·예상 급여 합계, 상세,
 
 ## Phase 6 — 백그라운드/지속 알림
 
+Issue #6에서 optional specialUse 서비스, 20초 예상 급여 알림, 휴게·재개·퇴근 액션과
+Room 상태 동기화를 구현했다. 권한 거부·서비스 중단에도 기록과 앱 복구를 보존한다.
+재부팅 자동 시작은 하지 않는다. Play specialUse 승인은 별도 심사 대상이다.
+[정책과 검증](SHIFT_NOTIFICATION.md).
+
 - Foreground Service 기술 검증
 - 지속 알림
 - 현재 근무 상태 표시

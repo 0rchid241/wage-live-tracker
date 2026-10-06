@@ -61,8 +61,11 @@ ISO 표현의 소수초 길이는 가변이므로 시간 비교와 휴게 정렬
 열린 휴게는 종료시각 null로 보존되므로 앱 재시작 후 그대로 복원된다.
 Repository는 휴게가 근무 시작보다 이르거나, 서로 겹치거나, 여러 개가 열려 있는
 경우를 거부한다. 맞닿은 휴게는 허용한다. 완료 근무의 휴게는 모두 닫혀 있어야 하며
-근무 종료 안에 포함되어야 한다. 휴게를 닫지 않은 채 종료하면 변경 없이 실패한다.
-휴게를 자동 종료하는 출퇴근 흐름은 이후 Issue에서 결정한다.
+근무 종료 안에 포함되어야 한다. 기존 `completeShift`는 휴게를 닫지 않은 채 종료하면
+변경 없이 실패한다. Issue #4의 `finishShift`는 열린 휴게 종료와 Shift 완료를 하나의
+트랜잭션으로 처리한다. `startBreak`, `endBreak`, `getOpenBreak`도 트랜잭션을 사용한다.
+시작과 같은 시각에 종료한 휴게는 0초이므로 삭제하며, 이 삭제도 완료 저장 실패 시
+함께 롤백한다. 자세한 화면·시간 처리 정책은 [실시간 흐름](LIVE_SHIFT_FLOW.md)을 참고한다.
 
 `completeShift`, `updateShiftTimes`, `saveBreak`는 관련 휴게 검증과 저장을 동일
 트랜잭션으로 수행한다. 위반은 `IllegalArgumentException`, 존재하지 않는 기록이나
@@ -87,7 +90,8 @@ DB 트리거 또는 특수 SQLite 기능은 사용하지 않는다.
 `fallbackToDestructiveMigration()`은 사용하지 않는다.
 
 앱 조립 시 `WageDatabase.open(applicationContext)`와 `WorkRepository(database)`를
-애플리케이션 범위에서 한 번 생성하고 재사용한다. 이번 Issue는 화면 연결을 하지 않는다.
+애플리케이션 범위에서 한 번 생성하고 재사용한다. Issue #4에서 `LiveShiftStore`를
+통해 출퇴근 ViewModel과 연결했으며 DAO는 UI에 노출하지 않는다.
 
 ## 검증
 

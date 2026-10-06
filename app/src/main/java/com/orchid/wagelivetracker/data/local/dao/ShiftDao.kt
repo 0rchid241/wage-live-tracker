@@ -16,5 +16,8 @@ interface ShiftDao {
     @Query("SELECT * FROM shifts WHERE status = 'IN_PROGRESS'") suspend fun getInProgress(): List<ShiftEntity>
     @Transaction
     @Query("SELECT * FROM shifts WHERE id = :id") suspend fun getWithBreaks(id: Long): ShiftWithBreaks?
+    @Transaction
+    @Query("SELECT * FROM shifts WHERE status = 'COMPLETED'")
+    suspend fun getCompletedWithBreaks(): List<ShiftWithBreaks>
     @Query("DELETE FROM shifts WHERE id = :id") suspend fun delete(id: Long): Int
 }

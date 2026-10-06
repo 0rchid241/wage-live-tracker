@@ -26,6 +26,7 @@ fun LiveShiftScreen(
     onConfirm: () -> Unit,
     onRetry: () -> Unit,
     onEdit: () -> Unit,
+    onHistory: () -> Unit = {},
 ) {
     BackHandler(enabled = state is LiveShiftState.Summary) { onConfirm() }
     Scaffold { padding ->
@@ -52,6 +53,8 @@ fun LiveShiftScreen(
                         Text(if (state.isStarting) "출근 저장 중…" else "출근")
                     }
                     TextButton(onClick = onEdit, enabled = !state.isStarting, modifier = Modifier.fillMaxWidth()) { Text("설정 수정") }
+                    OutlinedButton(onClick = onHistory, enabled = !state.isStarting,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("openHistory")) { Text("근무 기록") }
                 }
                 is LiveShiftState.Active -> {
                     Text("현재 예상 급여", style = MaterialTheme.typography.titleMedium)

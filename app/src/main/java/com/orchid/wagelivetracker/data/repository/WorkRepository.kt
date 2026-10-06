@@ -4,9 +4,10 @@ import androidx.room.withTransaction
 import com.orchid.wagelivetracker.data.local.database.WageDatabase
 import com.orchid.wagelivetracker.data.local.entity.ShiftEntity
 import java.time.LocalDateTime
+import java.time.YearMonth
 
 /** All application writes go through this boundary. DAOs are persistence implementation details. */
-class WorkRepository(private val database: WageDatabase) : WorkProfileStore, LiveShiftStore {
+class WorkRepository(private val database: WageDatabase) : WorkProfileStore, LiveShiftStore, WorkHistoryStore {
     private val profiles = database.workProfileDao()
     private val shifts = database.shiftDao()
     private val rests = database.breakDao()
@@ -135,6 +136,66 @@ class WorkRepository(private val database: WageDatabase) : WorkProfileStore, Liv
     suspend fun deleteBreak(id: Long): Boolean = rests.delete(id) == 1
     // FK RESTRICT preserves historical shifts when a referenced profile is deleted.
     suspend fun deleteProfile(id: Long): Boolean = profiles.delete(id) == 1
+
+    override suspend fun getCompletedShifts(month: YearMonth): List<HistoryRecord> = database.withTransaction {
+        // ISO strings have variable fractional precision. Filter/sort parsed timestamps, not TEXT.
+        shifts.getCompletedWithBreaks().filter { YearMonth.from(it.shift.startedAt) == month }
+            .sortedWith(compareByDescending<com.orchid.wagelivetracker.data.local.entity.ShiftWithBreaks> { it.shift.startedAt }.thenByDescending { it.shift.id })
+            .map { historyRecord(it.toModel()) }
+    }
+
+    override suspend fun getCompletedShift(id: Long): HistoryRecord? = database.withTransaction {
+        shifts.getWithBreaks(id)?.takeIf { it.shift.status == ShiftStatus.COMPLETED }
+            ?.let { historyRecord(it.toModel()) }
+    }
+
+    override suspend fun updateCompletedShift(id: Long, draft: CompletedShiftDraft): HistoryRecord = database.withTransaction {
+        val previous = requireCompletedShift(id)
+        require(draft.hourlyWage.signum() > 0) { "Hourly wage must be positive" }
+        val updated = previous.copy(startedAt = draft.startedAt, endedAt = draft.endedAt, hourlyWageSnapshot = draft.hourlyWage)
+        val replacement = draftBreaks(id, draft)
+        validateIntervals(updated, replacement)
+        rests.deleteForShift(id)
+        replacement.forEach { rests.insert(it.toEntity()) }
+        check(shifts.update(updated) == 1)
+        historyRecord(checkNotNull(shifts.getWithBreaks(id)).toModel())
+    }
+
+    override suspend fun addCompletedShift(draft: CompletedShiftDraft): HistoryRecord = database.withTransaction {
+        val profile = checkNotNull(getCurrentProfile()) { "A current profile is required" }
+        require(draft.hourlyWage.signum() > 0) { "Hourly wage must be positive" }
+        val entity = ShiftEntity(
+            workProfileId = profile.id, startedAt = draft.startedAt, endedAt = draft.endedAt, status = ShiftStatus.COMPLETED,
+            hourlyWageSnapshot = draft.hourlyWage, hasAtLeastFiveEmployeesSnapshot = profile.condition.hasAtLeastFiveEmployees,
+            nightPremiumRateSnapshot = profile.condition.nightPremiumRate, overtimePremiumRateSnapshot = profile.condition.overtimePremiumRate,
+        )
+        // Validate before writing; temporary relation id is replaced by the generated Shift id.
+        val replacement = draftBreaks(1, draft)
+        validateIntervals(entity, replacement)
+        val id = shifts.insert(entity)
+        replacement.forEach { rests.insert(it.copy(shiftId = id).toEntity()) }
+        historyRecord(checkNotNull(shifts.getWithBreaks(id)).toModel())
+    }
+
+    override suspend fun deleteCompletedShift(id: Long) = database.withTransaction {
+        requireCompletedShift(id)
+        check(shifts.delete(id) == 1) // FK CASCADE removes all associated breaks.
+    }
+
+    private suspend fun requireCompletedShift(id: Long): ShiftEntity {
+        val shift = checkNotNull(shifts.getById(id)) { "Shift not found" }
+        check(shift.status == ShiftStatus.COMPLETED && shift.endedAt != null) { "Only completed shifts can be edited or deleted" }
+        return shift
+    }
+
+    private fun draftBreaks(id: Long, draft: CompletedShiftDraft): List<BreakRecord> = draft.breaks.map {
+        requireNotNull(it.endedAt) { "Completed breaks must have an end" }
+        BreakRecord(shiftId = id, startedAt = it.startedAt, endedAt = it.endedAt)
+    }
+
+    private suspend fun historyRecord(stored: StoredShift) = HistoryRecord(
+        stored, checkNotNull(profiles.getById(stored.shift.workProfileId)).nickname.ifEmpty { "내 근무지" },
+    )
 
     private fun validateIntervals(shift: ShiftEntity, breaks: List<BreakRecord>) {
         require((shift.status == ShiftStatus.COMPLETED) == (shift.endedAt != null)) { "Shift status and end disagree" }

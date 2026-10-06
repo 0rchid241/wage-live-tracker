@@ -18,6 +18,10 @@ import com.orchid.wagelivetracker.ui.shift.LiveShiftViewModel
 import com.orchid.wagelivetracker.ui.shift.LiveShiftState
 import com.orchid.wagelivetracker.ui.shift.LiveShiftScreen
 import com.orchid.wagelivetracker.ui.theme.WageLiveTrackerTheme
+import com.orchid.wagelivetracker.ui.history.WorkHistoryViewModel
+import com.orchid.wagelivetracker.ui.history.WorkHistoryState
+import com.orchid.wagelivetracker.ui.history.WorkHistoryScreen
+import com.orchid.wagelivetracker.ui.history.HistoryActions
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,9 +30,11 @@ class MainActivity : ComponentActivity() {
         val repository = (application as WageApplication).repository
         val viewModel = ViewModelProvider(this, WorkProfileSetupViewModel.Factory(repository))[WorkProfileSetupViewModel::class.java]
         val live = ViewModelProvider(this, LiveShiftViewModel.Factory(repository, (application as WageApplication).shiftClock))[LiveShiftViewModel::class.java]
+        val history = ViewModelProvider(this, WorkHistoryViewModel.Factory(repository, (application as WageApplication).shiftClock))[WorkHistoryViewModel::class.java]
         setContent {
             val state by viewModel.state.collectAsStateWithLifecycle()
             val liveState by live.state.collectAsStateWithLifecycle()
+            val historyState by history.state.collectAsStateWithLifecycle()
             DisposableEffect(live) {
                 val observer = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_START) live.setForeground(true)
@@ -42,7 +48,8 @@ class MainActivity : ComponentActivity() {
                 if (state is WorkProfileSetupState.Ready && liveState is LiveShiftState.SetupRequired) live.reload()
             }
             WageLiveTrackerTheme {
-                if (liveState is LiveShiftState.SetupRequired) WorkProfileSetupScreen(
+                if (historyState != WorkHistoryState.Closed && liveState is LiveShiftState.Idle) WorkHistoryScreen(historyState, HistoryActions(history))
+                else if (liveState is LiveShiftState.SetupRequired) WorkProfileSetupScreen(
                     state = state,
                     onWageChange = viewModel::changeWage,
                     onNicknameChange = viewModel::changeNickname,
@@ -57,6 +64,7 @@ class MainActivity : ComponentActivity() {
                     onEndBreak = live::endBreak, onFinish = live::finishShift,
                     onConfirm = live::dismissSummary, onRetry = live::reload,
                     onEdit = { viewModel.editProfile(); live.openSetup() },
+                    onHistory = { if ((live.state.value as? LiveShiftState.Idle)?.isStarting == false) history.open() },
                 )
             }
         }

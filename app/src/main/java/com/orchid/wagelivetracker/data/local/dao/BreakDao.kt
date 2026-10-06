@@ -13,4 +13,5 @@ interface BreakDao {
     @Query("SELECT * FROM breaks WHERE id = :id") suspend fun getById(id: Long): BreakEntity?
     @Query("SELECT * FROM breaks WHERE shiftId = :shiftId") suspend fun getForShift(shiftId: Long): List<BreakEntity>
     @Query("DELETE FROM breaks WHERE id = :id") suspend fun delete(id: Long): Int
+    @Query("DELETE FROM breaks WHERE shiftId = :shiftId") suspend fun deleteForShift(shiftId: Long): Int
 }

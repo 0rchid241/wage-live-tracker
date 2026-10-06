@@ -26,7 +26,8 @@ updatedAt 이상으로 유지해 저장 계층 정책을 지킨다. 편집 숫�
 제거하고 시급 수치가 같으면 원래 BigDecimal의 scale까지 유지한다.
 
 WorkProfile은 Room에만 저장하며 DataStore를 추가하지 않는다. 과거 Shift Snapshot,
-Room schema version 1 및 기존 급여 계산 코드는 변경하지 않는다. 출퇴근과 카운터는 Issue #4 범위다.
+Room schema version 1 및 기존 급여 계산 코드는 변경하지 않는다. Issue #4에서 설정 완료 후
+출근 버튼이 있는 홈으로 연결했다. [실시간 출퇴근 흐름](LIVE_SHIFT_FLOW.md)을 참고한다.
 
 ## 로컬 검증
 

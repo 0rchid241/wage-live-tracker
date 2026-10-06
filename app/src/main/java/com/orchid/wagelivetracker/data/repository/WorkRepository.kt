@@ -6,7 +6,7 @@ import com.orchid.wagelivetracker.data.local.entity.ShiftEntity
 import java.time.LocalDateTime
 
 /** All application writes go through this boundary. DAOs are persistence implementation details. */
-class WorkRepository(private val database: WageDatabase) : WorkProfileStore {
+class WorkRepository(private val database: WageDatabase) : WorkProfileStore, LiveShiftStore {
     private val profiles = database.workProfileDao()
     private val shifts = database.shiftDao()
     private val rests = database.breakDao()
@@ -30,7 +30,7 @@ class WorkRepository(private val database: WageDatabase) : WorkProfileStore {
         return current.singleOrNull()?.toModel()
     }
 
-    suspend fun startShift(profileId: Long, startedAt: LocalDateTime): ShiftRecord = database.withTransaction {
+    override suspend fun startShift(profileId: Long, startedAt: LocalDateTime): ShiftRecord = database.withTransaction {
         check(shifts.getInProgress().isEmpty()) { "A shift is already in progress" }
         val profile = checkNotNull(profiles.getById(profileId)) { "Profile not found" }
         val entity = ShiftEntity(
@@ -41,13 +41,64 @@ class WorkRepository(private val database: WageDatabase) : WorkProfileStore {
         entity.copy(id = shifts.insert(entity)).toModel()
     }
 
-    suspend fun getInProgressShift(): StoredShift? = database.withTransaction {
+    override suspend fun getInProgressShift(): StoredShift? = database.withTransaction {
         val active = shifts.getInProgress()
         check(active.size <= 1) { "Multiple in-progress shifts found" }
         active.singleOrNull()?.let { checkNotNull(shifts.getWithBreaks(it.id)).toModel() }
     }
 
     suspend fun getShift(id: Long): StoredShift? = shifts.getWithBreaks(id)?.toModel()
+
+    suspend fun getOpenBreak(shiftId: Long): BreakRecord? = database.withTransaction {
+        val open = rests.getForShift(shiftId).filter { it.endedAt == null }
+        check(open.size <= 1) { "Multiple open breaks found" }
+        open.singleOrNull()?.toModel()
+    }
+
+    override suspend fun startBreak(shiftId: Long, startedAt: LocalDateTime): StoredShift = database.withTransaction {
+        val shift = requireActiveShift(shiftId)
+        val breaks = rests.getForShift(shiftId).map { it.toModel() }
+        check(breaks.none { it.endedAt == null }) { "A break is already open" }
+        val rest = BreakRecord(shiftId = shiftId, startedAt = startedAt)
+        validateIntervals(shift, breaks + rest)
+        rests.insert(rest.toEntity())
+        checkNotNull(shifts.getWithBreaks(shiftId)).toModel()
+    }
+
+    override suspend fun endBreak(shiftId: Long, endedAt: LocalDateTime): StoredShift = database.withTransaction {
+        requireActiveShift(shiftId)
+        closeOpenBreak(shiftId, endedAt, required = true)
+        checkNotNull(shifts.getWithBreaks(shiftId)).toModel()
+    }
+
+    /** Closing an open break AND completing the shift commit or roll back together. */
+    override suspend fun finishShift(shiftId: Long, endedAt: LocalDateTime): StoredShift = database.withTransaction {
+        val previous = requireActiveShift(shiftId)
+        closeOpenBreak(shiftId, endedAt, required = false)
+        val completed = previous.copy(endedAt = endedAt, status = ShiftStatus.COMPLETED)
+        validateIntervals(completed, rests.getForShift(shiftId).map { it.toModel() })
+        check(shifts.update(completed) == 1)
+        checkNotNull(shifts.getWithBreaks(shiftId)).toModel()
+    }
+
+    private suspend fun requireActiveShift(id: Long): ShiftEntity {
+        val shift = checkNotNull(shifts.getById(id)) { "Shift not found" }
+        check(shift.status == ShiftStatus.IN_PROGRESS && shift.endedAt == null) { "Shift is not in progress" }
+        return shift
+    }
+
+    private suspend fun closeOpenBreak(shiftId: Long, endedAt: LocalDateTime, required: Boolean) {
+        val open = rests.getForShift(shiftId).filter { it.endedAt == null }
+        check(open.size <= 1) { "Multiple open breaks found" }
+        val rest = open.singleOrNull()
+        check(!required || rest != null) { "No break is open" }
+        if (rest != null) {
+            require(endedAt >= rest.startedAt) { "Break end precedes start" }
+            // An immediate resume has no unpaid duration. Do not create an invalid zero-length interval.
+            if (endedAt == rest.startedAt) check(rests.delete(rest.id) == 1)
+            else check(rests.update(rest.copy(endedAt = endedAt)) == 1)
+        }
+    }
 
     suspend fun completeShift(id: Long, endedAt: LocalDateTime): StoredShift = database.withTransaction {
         val previous = checkNotNull(shifts.getById(id)) { "Shift not found" }

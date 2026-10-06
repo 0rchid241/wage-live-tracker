@@ -53,11 +53,16 @@
 - package: `com.orchid.wagelivetracker`
 - minSdk: 26
 
+현재 구현 범위는 급여 계산 엔진, Room 저장, 기본 근무조건 설정과 출근·실시간 급여·휴게·
+퇴근 정산 흐름이다. 진행 중 근무와 열린 휴게는 앱 재실행 시 복구한다.
+월간 기록/수정, 지속 알림, 광고는 후속 Issue에서 구현한다.
+
 ## 문서
 
 - [제품 기획서](docs/PRODUCT_SPEC.md)
 - [개발 로드맵](docs/ROADMAP.md)
 - [개발 규칙](docs/DEVELOPMENT.md)
+- [실시간 출퇴근 흐름 구현과 검증](docs/LIVE_SHIFT_FLOW.md)
 
 ## 개발 원칙
 
